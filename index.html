@@ -1,0 +1,488 @@
+<title>Shuffle Song Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Sora:wght@400;600;800&family=Silkscreen&display=swap">
+<style>
+/* Layout: candy-colored "sticker deck" — a spinning player deck on the left, the decoded song stack on the right; on phones the deck becomes a dock at the bottom */
+:root{
+  --bg:#fdf2ff; --bg2:#e9f3ff; --ink:#1a0b2e; --muted:#6a5a80; --card:#ffffff; --line:#1a0b2e;
+  --pink:#ff3fa4; --blue:#3b5bff; --lime:#c6f432; --sun:#ffb21f; --lilac:#b48cff;
+  --shadow:#1a0b2e;
+  --display:"Dela Gothic One","Arial Black",Impact,sans-serif;
+  --body:"Sora",system-ui,sans-serif;
+  --pixel:"Silkscreen","Courier New",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#1b0d33; --bg2:#0d1640; --ink:#fbefff; --muted:#bfaedb; --card:#2a1650; --line:#fbefff; --shadow:#05010c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1b0d33; --bg2:#0d1640; --ink:#fbefff; --muted:#bfaedb; --card:#2a1650; --line:#fbefff; --shadow:#05010c; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;overflow-x:hidden}
+.blobs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(160deg,var(--bg),var(--bg2))}
+.blobs i{position:absolute;border-radius:50%;filter:blur(60px);opacity:.55;animation:drift 22s ease-in-out infinite alternate}
+.blobs i:nth-child(1){width:46vmax;height:46vmax;background:var(--pink);left:-12vmax;top:-14vmax}
+.blobs i:nth-child(2){width:40vmax;height:40vmax;background:var(--blue);right:-14vmax;top:20vh;animation-delay:-7s}
+.blobs i:nth-child(3){width:34vmax;height:34vmax;background:var(--lime);left:30vw;bottom:-18vmax;animation-delay:-13s;opacity:.4}
+@keyframes drift{to{transform:translate(6vmax,4vmax) scale(1.12)}}
+
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding-block:26px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:26px}
+
+/* hero */
+.hero{display:grid;gap:12px}
+.kicker{font-family:var(--pixel);font-size:13px;letter-spacing:.08em;display:flex;gap:8px;flex-wrap:wrap}
+.tag{background:var(--ink);color:var(--bg);padding:3px 10px;border-radius:99px}
+.tag.alt{background:var(--lime);color:#1a0b2e}
+h1{font-family:var(--display);font-weight:400;margin:0;font-size:clamp(44px,9vw,112px);line-height:.88;letter-spacing:-.01em;text-wrap:balance}
+h1 .w{display:inline-block;transform:rotate(-2deg)}
+h1 .s1{color:var(--pink);-webkit-text-stroke:2px var(--line);text-shadow:5px 5px 0 var(--shadow)}
+h1 .s2{color:var(--blue);-webkit-text-stroke:2px var(--line);text-shadow:5px 5px 0 var(--shadow);transform:rotate(1.5deg)}
+h1 .s3{color:var(--lime);-webkit-text-stroke:2px var(--line);text-shadow:5px 5px 0 var(--shadow);transform:rotate(-1deg)}
+.lede{max-width:56ch;font-size:17px;margin:4px 0 0}
+.lede code{font-family:var(--pixel);background:var(--sun);color:#1a0b2e;padding:0 6px;border-radius:4px}
+
+/* chunky sticker surfaces */
+.sticker{background:var(--card);border:3px solid var(--line);border-radius:22px;box-shadow:6px 6px 0 var(--shadow)}
+.load{padding:18px 20px;display:grid;gap:14px;grid-template-columns:1fr auto;align-items:center}
+.load ol{margin:0;padding-left:22px;display:grid;gap:3px}
+.load code{font-family:var(--pixel);font-size:12px;background:var(--lilac);color:#1a0b2e;padding:1px 6px;border-radius:4px}
+.load .btns{display:flex;flex-direction:column;gap:10px}
+.drop{grid-column:1/-1;border:3px dashed var(--muted);border-radius:16px;padding:12px;text-align:center;color:var(--muted);font-weight:600}
+.drop.over{border-color:var(--pink);color:var(--ink);background:color-mix(in srgb,var(--pink) 12%,transparent)}
+.status{grid-column:1/-1;font-family:var(--pixel);font-size:12.5px;color:var(--muted);min-height:1.4em}
+
+.btn{font:800 15px var(--body);border:3px solid var(--line);border-radius:99px;padding:11px 20px;cursor:pointer;background:var(--pink);color:#fff;box-shadow:4px 4px 0 var(--shadow);transition:transform .12s,box-shadow .12s;white-space:nowrap}
+.btn:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--shadow)}
+.btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--shadow)}
+.btn.blue{background:var(--blue)}
+.btn.lime{background:var(--lime);color:#1a0b2e}
+.btn.ghost{background:var(--card);color:var(--ink)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+
+/* main grid */
+.main{display:grid;grid-template-columns:360px minmax(0,1fr);gap:26px;align-items:start}
+
+/* deck */
+.deck{position:sticky;top:calc(16px + env(safe-area-inset-top,0px));padding:20px;display:grid;gap:16px;background:linear-gradient(170deg,var(--card),color-mix(in srgb,var(--lilac) 22%,var(--card)))}
+.screen{border:3px solid var(--line);border-radius:16px;background:#d9f7c4;color:#163a12;padding:10px 12px;font-family:var(--pixel);overflow:hidden}
+.screen .row{display:flex;justify-content:space-between;font-size:11px;opacity:.8}
+.marquee{white-space:nowrap;overflow:hidden;font-size:15px;margin-top:4px}
+.marquee span{display:inline-block;padding-left:100%;animation:scroll 12s linear infinite}
+.marquee.still span{padding-left:0;animation:none}
+@keyframes scroll{to{transform:translateX(-100%)}}
+.sub{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.85}
+
+.coverwrap{display:grid;place-items:center;position:relative}
+.disc{width:min(220px,60vw);aspect-ratio:1;max-width:100%;border-radius:50%;border:3px solid var(--line);box-shadow:6px 6px 0 var(--shadow);display:grid;place-items:center;position:relative;animation:spin 6s linear infinite;animation-play-state:paused;background:conic-gradient(var(--pink),var(--sun),var(--lime),var(--blue),var(--lilac),var(--pink))}
+.disc.on{animation-play-state:running}
+.disc::after{content:"";width:22%;aspect-ratio:1;border-radius:50%;background:var(--bg);border:3px solid var(--line)}
+.disc b{position:absolute;inset:18%;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-size:42px;color:#fff;-webkit-text-stroke:1.5px #1a0b2e;text-shadow:3px 3px 0 #1a0b2e}
+@keyframes spin{to{transform:rotate(360deg)}}
+.disc.wiggle{animation:wig .6s ease}
+@keyframes wig{20%{transform:rotate(-14deg) scale(1.06)}45%{transform:rotate(12deg)}70%{transform:rotate(-6deg)}100%{transform:rotate(0)}}
+.eq{position:absolute;right:6%;bottom:4%;display:flex;gap:3px;align-items:flex-end;height:34px;padding:5px 6px;border-radius:10px;background:var(--ink)}
+.eq i{width:5px;background:var(--lime);height:20%;border-radius:2px}
+.eq.on i{animation:bounce .8s ease-in-out infinite alternate}
+.eq.on i:nth-child(2){animation-delay:-.3s;background:var(--pink)}
+.eq.on i:nth-child(3){animation-delay:-.6s;background:var(--sun)}
+.eq.on i:nth-child(4){animation-delay:-.15s;background:var(--blue)}
+@keyframes bounce{from{height:15%}to{height:100%}}
+
+/* control ring */
+.ring{width:210px;aspect-ratio:1;max-width:100%;margin:0 auto;border-radius:50%;border:3px solid var(--line);background:var(--card);box-shadow:5px 5px 0 var(--shadow);position:relative}
+.ring button{position:absolute;border:0;background:transparent;color:var(--ink);font:800 14px var(--body);cursor:pointer;width:58px;height:46px;border-radius:14px}
+.ring button:hover:not(:disabled){background:color-mix(in srgb,var(--lilac) 30%,transparent)}
+.ring button:disabled{opacity:.35;cursor:default}
+.r-top{top:8px;left:50%;transform:translateX(-50%)}
+.r-bot{bottom:8px;left:50%;transform:translateX(-50%)}
+.r-l{left:6px;top:50%;transform:translateY(-50%)}
+.r-r{right:6px;top:50%;transform:translateY(-50%)}
+.ring .pp{left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border-radius:50%;background:var(--pink);color:#fff;border:3px solid var(--line);font-size:28px;box-shadow:3px 3px 0 var(--shadow)}
+.ring .pp:hover:not(:disabled){background:var(--pink);filter:brightness(1.08)}
+.seekrow{display:flex;align-items:center;gap:10px;font-family:var(--pixel);font-size:12px}
+.seek{flex:1;min-width:0;accent-color:var(--pink);height:22px}
+.shuf{width:100%;font-family:var(--display);font-weight:400;font-size:22px;letter-spacing:.02em;padding:14px}
+.shuf[aria-pressed="true"]{background:var(--lime);color:#1a0b2e}
+.shuf:disabled{opacity:.5;cursor:default;transform:none}
+
+/* list */
+.listhead{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.count{font-family:var(--display);font-size:30px;line-height:1}
+.count small{font-family:var(--pixel);font-size:12px;vertical-align:middle;margin-left:6px}
+.sample{font-family:var(--pixel);font-size:11px;background:var(--sun);color:#1a0b2e;padding:2px 8px;border-radius:99px;border:2px solid var(--line);vertical-align:middle;margin-left:6px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+#q{font:600 15px var(--body);padding:10px 16px;border-radius:99px;border:3px solid var(--line);background:var(--card);color:var(--ink);min-width:0;flex:1 1 220px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:700 13px var(--body);padding:6px 12px;border-radius:99px;border:2px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+
+.songs{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.song{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;align-items:center;padding:10px 14px 10px 10px;background:var(--card);border:3px solid var(--line);border-radius:18px;box-shadow:4px 4px 0 var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s}
+.song:hover{transform:translate(-2px,-2px) rotate(-.4deg);box-shadow:6px 6px 0 var(--shadow)}
+.song.on{background:color-mix(in srgb,var(--lime) 45%,var(--card))}
+.art{width:52px;height:52px;border-radius:12px;border:2px solid var(--line);display:grid;place-items:center;font-family:var(--display);font-size:20px;color:#fff;-webkit-text-stroke:1px #1a0b2e;text-shadow:2px 2px 0 #1a0b2e}
+.song .t{font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.song .a{color:var(--muted);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.song .f{font-family:var(--pixel);font-size:11px;color:var(--muted)}
+.song .go{width:42px;height:42px;border-radius:50%;border:2px solid var(--line);background:var(--bg);color:var(--ink);font-size:14px;cursor:pointer}
+.song.on .go{background:var(--pink);color:#fff}
+.empty{color:var(--muted);font-style:italic;padding:20px;text-align:center}
+
+@media (max-width:860px){
+  .main{grid-template-columns:minmax(0,1fr)}
+  .load{grid-template-columns:1fr}
+  .load .btns{flex-direction:row;flex-wrap:wrap}
+  .deck{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:30;border-radius:22px 22px 0 0;border-width:3px 0 0;box-shadow:0 -6px 0 var(--shadow);padding-block:12px calc(12px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));grid-template-columns:minmax(0,1fr) auto;gap:10px}
+  .coverwrap{display:none}
+  .screen{grid-column:1/2}
+  .ring{width:auto;aspect-ratio:auto;border-radius:99px;display:flex;gap:2px;padding:4px;grid-column:2;grid-row:1}
+  .ring button,.ring .pp{position:static;transform:none;width:40px;height:40px;font-size:13px;padding:0}
+  .ring .pp{order:3;width:48px;height:48px;font-size:18px}
+  .r-l{order:1}.r-bot{order:2}.r-top{order:4}.r-r{order:5}
+  .seekrow{grid-column:1/-1}
+  .shuf{grid-column:1/-1;font-size:16px;padding:9px}
+  .wrap{padding-bottom:230px}
+}
+@media (max-width:480px){.ring .r-l,.ring .r-r{display:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+
+<div class="blobs" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="wrap">
+  <header class="hero">
+    <div class="kicker"><span class="tag">IPOD REVIVAL</span><span class="tag alt">NO ITUNES NEEDED</span></div>
+    <h1><span class="w s1">SHUFFLE</span> <span class="w s2">SONG</span> <span class="w s3">FINDER</span></h1>
+    <p class="lede">Your iPod renamed every song to gibberish like <code>BXQT.mp3</code>. Plug it in, point this page at it, and get your real song names back. Then hit shuffle.</p>
+  </header>
+
+  <section class="load sticker" aria-labelledby="how">
+    <div>
+      <strong id="how" style="font-family:var(--display);font-weight:400;font-size:20px">Load your iPod</strong>
+      <ol>
+        <li>Plug in your iPod, click <b>Choose iPod folder</b>, and open your iPod (it shows up under the name you gave it).</li>
+        <li>Can't see <code>iPod_Control</code>? It's hidden. On a Chromebook press <code>Ctrl</code> + <code>.</code>, on a Mac press <code>Cmd</code> + <code>Shift</code> + <code>.</code>, and on Windows turn on <b>Hidden items</b> in File Explorer's View menu.</li>
+        <li>Open <code>iPod_Control</code>, pick the <code>Music</code> folder, and click Open.</li>
+      </ol>
+    </div>
+    <div class="btns">
+      <button class="btn" id="pickDir" type="button">Choose iPod folder</button>
+      <button class="btn ghost" id="pickFiles" type="button">Pick song files</button>
+      <input id="dirInput" type="file" webkitdirectory multiple hidden>
+      <input id="fileInput" type="file" multiple accept="audio/*,.mp3,.m4a,.aac,.wav,.aif,.aiff" hidden>
+    </div>
+    <div class="drop" id="drop">or drag the Music folder right here</div>
+    <div class="status" id="status" role="status"></div>
+  </section>
+
+  <div class="main">
+    <aside class="deck sticker" aria-label="Player">
+      <div class="screen">
+        <div class="row"><span id="scrState">READY</span><span id="scrPos">— / —</span></div>
+        <div class="marquee still" id="mq"><span id="npTitle">Nothing playing</span></div>
+        <div class="sub" id="npSub">Load your iPod to start</div>
+      </div>
+      <div class="coverwrap">
+        <div class="disc" id="disc"><b id="discTxt">♪</b></div>
+        <div class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="ring">
+        <button class="r-top" id="fwd" type="button" aria-label="Forward 15 seconds">+15</button>
+        <button class="r-bot" id="back" type="button" aria-label="Back 15 seconds">−15</button>
+        <button class="r-l" id="prev" type="button" aria-label="Previous song">⏮</button>
+        <button class="r-r" id="next" type="button" aria-label="Next song">⏭</button>
+        <button class="pp" id="pp" type="button" aria-label="Play">▶</button>
+      </div>
+      <div class="seekrow">
+        <span id="cur">0:00</span>
+        <input class="seek" id="seek" type="range" min="0" max="0" step="1" value="0" aria-label="Song position">
+        <span id="dur">0:00</span>
+      </div>
+      <button class="btn lime shuf" id="shuf" type="button" aria-pressed="false">⤮ SHUFFLE IT</button>
+    </aside>
+
+    <section aria-label="Songs">
+      <div class="listhead">
+        <div class="count" id="count"></div>
+        <div class="tools" style="flex:1 1 320px;justify-content:flex-end">
+          <input id="q" type="search" placeholder="Search songs, artists, albums" aria-label="Search songs">
+        </div>
+      </div>
+      <div class="listhead" style="margin-top:-4px">
+        <div class="chips" role="group" aria-label="Sort by">
+          <button class="chip" type="button" data-k="artist" aria-pressed="true">Artist</button>
+          <button class="chip" type="button" data-k="title" aria-pressed="false">Song</button>
+          <button class="chip" type="button" data-k="album" aria-pressed="false">Album</button>
+        </div>
+        <button class="chip" id="copy" type="button">Copy list</button>
+      </div>
+      <ul class="songs" id="rows"></ul>
+    </section>
+  </div>
+  <audio id="player" hidden></audio>
+</div>
+
+<script>
+(()=>{
+const $=s=>document.querySelector(s);
+const AUDIO=/\.(mp3|m4a|m4b|m4p|aac|wav|aif|aiff)$/i;
+let songs=[
+  {title:"Example: Mr. Brightside",artist:"The Killers",album:"Hot Fuss",track:2,file:"F03/KQZD.mp3",sample:true},
+  {title:"Example: Hey Ya!",artist:"OutKast",album:"Speakerboxxx/The Love Below",track:9,file:"F11/BXQT.mp3",sample:true},
+  {title:"Example: Clocks",artist:"Coldplay",album:"A Rush of Blood to the Head",track:5,file:"F07/LMWR.m4a",sample:true},
+  {title:"Example: Seven Nation Army",artist:"The White Stripes",album:"Elephant",track:1,file:"F00/AAPC.mp3",sample:true},
+];
+let sortK="artist",url=null;
+const player=$("#player");
+
+/* ---------- tag parsing ---------- */
+function decodeText(bytes,enc){
+  try{
+    if(enc===1||enc===2){
+      let le=true,start=0;
+      if(enc===1&&bytes.length>=2){ if(bytes[0]===0xFE&&bytes[1]===0xFF){le=false;start=2}else if(bytes[0]===0xFF&&bytes[1]===0xFE){start=2} }
+      if(enc===2) le=false;
+      return new TextDecoder(le?"utf-16le":"utf-16be").decode(bytes.subarray(start)).replace(/\0+$/,"").split("\0")[0];
+    }
+    return new TextDecoder(enc===3?"utf-8":"latin1").decode(bytes).replace(/\0+$/,"").split("\0")[0];
+  }catch(e){return ""}
+}
+function unsync(b){const o=[];for(let i=0;i<b.length;i++){o.push(b[i]);if(b[i]===0xFF&&b[i+1]===0)i++}return new Uint8Array(o)}
+function parseID3v2(b){
+  if(!(b[0]===0x49&&b[1]===0x44&&b[2]===0x33))return null;
+  const ver=b[3],flags=b[5];
+  const size=(b[6]<<21)|(b[7]<<14)|(b[8]<<7)|b[9];
+  let d=b.subarray(10,10+size);
+  if(flags&0x80&&ver<4)d=unsync(d);
+  let p=0;
+  if(flags&0x40&&ver>=3){const es=ver===4?((d[0]<<21)|(d[1]<<14)|(d[2]<<7)|d[3]):((d[0]<<24)|(d[1]<<16)|(d[2]<<8)|d[3])+4;p+=es}
+  const out={};
+  const map=ver===2?{TT2:"title",TP1:"artist",TAL:"album",TRK:"track"}:{TIT2:"title",TPE1:"artist",TALB:"album",TRCK:"track"};
+  const idLen=ver===2?3:4,hdr=ver===2?6:10;
+  while(p+hdr<=d.length){
+    const id=String.fromCharCode(...d.subarray(p,p+idLen));
+    if(!/^[A-Z0-9]+$/.test(id))break;
+    let fs;
+    if(ver===2)fs=(d[p+3]<<16)|(d[p+4]<<8)|d[p+5];
+    else if(ver===4)fs=(d[p+4]<<21)|(d[p+5]<<14)|(d[p+6]<<7)|d[p+7];
+    else fs=(d[p+4]<<24)|(d[p+5]<<16)|(d[p+6]<<8)|d[p+7];
+    if(fs<=0||p+hdr+fs>d.length)break;
+    let fr=d.subarray(p+hdr,p+hdr+fs);
+    if(ver===4&&(d[p+9]&0x02))fr=unsync(fr);
+    if(map[id]&&fr.length>1)out[map[id]]=decodeText(fr.subarray(1),fr[0]).trim();
+    p+=hdr+fs;
+  }
+  return out;
+}
+function parseID3v1(b){
+  if(b.length<128)return null;
+  const t=b.subarray(b.length-128);
+  if(!(t[0]===0x54&&t[1]===0x41&&t[2]===0x47))return null;
+  const s=(a,z)=>new TextDecoder("latin1").decode(t.subarray(a,z)).replace(/\0.*$/,"").trim();
+  return {title:s(3,33),artist:s(33,63),album:s(63,93),track:(t[125]===0&&t[126])?t[126]:""};
+}
+function parseMP4(b){
+  const v=new DataView(b.buffer,b.byteOffset,b.byteLength),out={};
+  const name=(i)=>String.fromCharCode(b[i],b[i+1],b[i+2],b[i+3]);
+  function walk(s,e,depth){
+    let p=s;
+    while(p+8<=e){
+      let sz=v.getUint32(p);const t=name(p+4);let h=8;
+      if(sz===1){sz=Number(v.getBigUint64(p+8));h=16}else if(sz===0)sz=e-p;
+      if(sz<8||p+sz>e)break;
+      if(t==="moov"||t==="udta"||t==="ilst")walk(p+h,p+sz,depth+1);
+      else if(t==="meta")walk(p+h+4,p+sz,depth+1);
+      else if(depth>=3&&(t==="©nam"||t==="©ART"||t==="©alb"||t==="trkn"||t==="aART")){
+        let q=p+h;
+        while(q+16<=p+sz){const ds=v.getUint32(q);if(name(q+4)==="data"){const val=b.subarray(q+16,q+ds);
+          if(t==="trkn")out.track=val.length>=4?v.getUint16(q+16+2):"";
+          else{const k={"©nam":"title","©ART":"artist","©alb":"album","aART":"albumArtist"}[t];out[k]=new TextDecoder("utf-8").decode(val).trim()}
+          break}if(ds<8)break;q+=ds}
+      }
+      p+=sz;
+    }
+  }
+  walk(0,b.length,0);
+  if(!out.artist&&out.albumArtist)out.artist=out.albumArtist;
+  return out;
+}
+async function readTags(file){
+  const isMP4=/\.(m4a|m4b|m4p|mp4|aac)$/i.test(file.name);
+  try{
+    if(isMP4){return parseMP4(new Uint8Array(await file.arrayBuffer()))}
+    const head=new Uint8Array(await file.slice(0,Math.min(file.size,1024*1024)).arrayBuffer());
+    let t=parseID3v2(head);
+    if(t&&t.title)return t;
+    const tail=new Uint8Array(await file.slice(Math.max(0,file.size-128)).arrayBuffer());
+    const t1=parseID3v1(tail);
+    if(t1&&t1.title)return Object.assign({},t1,t||{});
+    if(head[4]===0x66&&head[5]===0x74&&head[6]===0x79&&head[7]===0x70)return parseMP4(new Uint8Array(await file.arrayBuffer()));
+    return t||{};
+  }catch(e){return {}}
+}
+
+
+/* ---------- loading ---------- */
+async function load(fileList){
+  const files=[...fileList].filter(f=>AUDIO.test(f.name));
+  if(!files.length){$("#status").textContent="No songs found there. Pick iPod_Control → Music (or a folder inside it).";return}
+  stop();
+  const out=[];let i=0;
+  for(const f of files){
+    i++; if(i%10===0||i===files.length)$("#status").textContent=`Decoding song ${i} of ${files.length}…`;
+    const t=await readTags(f);
+    const rel=(f.webkitRelativePath||f._path||f.name).split("/").slice(-2).join("/");
+    out.push({title:t.title||"",artist:t.artist||"",album:t.album||"",track:parseInt(t.track)||"",file:rel,blob:f});
+  }
+  songs=out;
+  const untitled=out.filter(s=>!s.title).length;
+  $("#status").textContent=`Done. ${out.length} songs decoded`+(untitled?`, ${untitled} had no song info so they show by filename.`:".");
+  render();updateBar();
+}
+$("#pickDir").onclick=()=>$("#dirInput").click();
+$("#pickFiles").onclick=()=>$("#fileInput").click();
+$("#dirInput").onchange=e=>load(e.target.files);
+$("#fileInput").onchange=e=>load(e.target.files);
+const drop=$("#drop");
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,()=>drop.classList.remove("over")));
+drop.addEventListener("drop",async e=>{
+  e.preventDefault();
+  const items=[...e.dataTransfer.items].map(it=>it.webkitGetAsEntry&&it.webkitGetAsEntry()).filter(Boolean);
+  if(!items.length){load(e.dataTransfer.files);return}
+  const files=[];
+  const readAll=r=>new Promise(res=>{const acc=[];const step=()=>r.readEntries(b=>{if(!b.length)res(acc);else{acc.push(...b);step()}},()=>res(acc));step()});
+  async function walk(en,path){
+    if(en.isFile){await new Promise(res=>en.file(f=>{f._path=path+f.name;files.push(f);res()},res))}
+    else if(en.isDirectory){for(const c of await readAll(en.createReader()))await walk(c,path+en.name+"/")}
+  }
+  $("#status").textContent="Finding songs…";
+  for(const en of items)await walk(en,"");
+  load(files);
+});
+
+/* ---------- covers ---------- */
+const PAL=["#ff3fa4","#3b5bff","#c6f432","#ffb21f","#b48cff","#22d3c5","#ff6b3d"];
+function hash(s){let h=0;for(const c of s||"?")h=(h*31+c.charCodeAt(0))>>>0;return h}
+function coverCSS(s){const h=hash(s.album||s.artist||s.file);const a=PAL[h%PAL.length],b=PAL[(h>>3)%PAL.length===h%PAL.length?(h+1)%PAL.length:(h>>3)%PAL.length];const ang=h%360;return `background:linear-gradient(${ang}deg,${a},${b})`}
+function initials(s){const src=(s.artist||s.title||s.file||"?").replace(/^the\s+/i,"");return (src.match(/[A-Za-z0-9]/)||["♪"])[0].toUpperCase()}
+
+/* ---------- list ---------- */
+function shown(){
+  const q=$("#q").value.trim().toLowerCase();
+  let list=songs.filter(s=>!q||[s.title,s.artist,s.album,s.file].join(" ").toLowerCase().includes(q));
+  list.sort((a,b)=>{
+    const k=sortK;let x=a[k],y=b[k];
+    if(k==="title"){x=x||a.file;y=y||b.file}
+    const c=String(x||"￿").localeCompare(String(y||"￿"),undefined,{sensitivity:"base"});
+    if(c)return c;
+    const al=(a.album||"").localeCompare(b.album||"");if(al)return al;
+    return ((+a.track||999)-(+b.track||999));
+  });
+  return list;
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function render(){
+  const list=shown(),sample=songs.some(s=>s.sample);
+  $("#count").innerHTML=`${songs.length} song${songs.length===1?"":"s"}`+(sample?`<span class="sample">EXAMPLE</span>`:"")+(list.length!==songs.length?`<small>${list.length} shown</small>`:"");
+  document.querySelectorAll(".chip[data-k]").forEach(c=>c.setAttribute("aria-pressed",c.dataset.k===sortK));
+  $("#rows").innerHTML=list.length?list.map(s=>{
+    const i=songs.indexOf(s),on=current===i,pl=on&&!player.paused;
+    return `<li class="song${on?" on":""}" data-i="${i}">
+      <div class="art" style="${coverCSS(s)}">${esc(initials(s))}</div>
+      <div style="min-width:0">
+        <div class="t">${s.title?esc(s.title):"Mystery track"}</div>
+        <div class="a">${esc([s.artist,s.album].filter(Boolean).join(" · ")||"Unknown artist")}</div>
+        <div class="f">${esc(s.file)}</div>
+      </div>
+      <button class="go" type="button" data-i="${i}" aria-label="${pl?"Pause":"Play"} ${esc(s.title||s.file)}" ${s.blob?"":"disabled title='Load your iPod to play'"}>${pl?"❚❚":"▶"}</button>
+    </li>`}).join(""):`<li class="empty">Nothing matches that search.</li>`;
+}
+document.querySelectorAll(".chip[data-k]").forEach(c=>c.onclick=()=>{sortK=c.dataset.k;render()});
+$("#q").oninput=render;
+
+/* ---------- player ---------- */
+let queue=[],qpos=-1,shuffleOn=false,current=null,fails=0;
+function stop(){player.pause();if(url)URL.revokeObjectURL(url);url=null;current=null;queue=[];qpos=-1;player.removeAttribute("src");updateBar()}
+function playable(){return shown().map(s=>songs.indexOf(s)).filter(i=>songs[i].blob)}
+function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function buildQueue(startIdx){
+  const list=playable();
+  if(shuffleOn){const q=shuffled(list.filter(i=>i!==startIdx));queue=startIdx!=null?[startIdx,...q]:q}
+  else queue=list;
+  qpos=startIdx!=null?Math.max(0,queue.indexOf(startIdx)):0;
+}
+function playAt(pos){
+  if(pos<0||pos>=queue.length){player.pause();updateBar();render();return}
+  qpos=pos;const i=queue[pos],s=songs[i];
+  if(url)URL.revokeObjectURL(url);
+  url=URL.createObjectURL(s.blob);player.src=url;current=i;
+  player.play().then(()=>{fails=0}).catch(()=>{
+    fails++;$("#status").textContent=`Skipped "${s.title||s.file}". It's a protected iTunes purchase and won't play outside iTunes.`;
+    if(fails<5)playAt(pos+1);else{fails=0;player.pause();updateBar();render()}
+  });
+  render();updateBar();
+}
+function startFrom(i){buildQueue(i);playAt(qpos)}
+const fmt=t=>{t=Math.max(0,Math.floor(t||0));return Math.floor(t/60)+":"+String(t%60).padStart(2,"0")};
+function updateBar(){
+  const s=current!=null?songs[current]:null,has=songs.some(x=>x.blob),isPlaying=!!s&&!player.paused;
+  const title=s?(s.title||s.file):(has?"Ready when you are":"Nothing playing");
+  $("#npTitle").textContent=s?`${title}${s.artist?"  ·  "+s.artist:""}`:title;
+  $("#mq").classList.toggle("still",!isPlaying);
+  $("#npSub").textContent=s?(s.album||s.file):(has?"Hit SHUFFLE IT or pick a song":"Load your iPod to start");
+  $("#scrState").textContent=isPlaying?(shuffleOn?"▶ SHUFFLE":"▶ PLAYING"):(s?"❚❚ PAUSED":"READY");
+  $("#scrPos").textContent=s?`${qpos+1} / ${queue.length}`:"— / —";
+  const pp=$("#pp");pp.textContent=isPlaying?"❚❚":"▶";pp.setAttribute("aria-label",isPlaying?"Pause":"Play");
+  pp.disabled=!has;$("#shuf").disabled=!has;
+  ["prev","next","back","fwd"].forEach(id=>$("#"+id).disabled=!s);
+  $("#shuf").setAttribute("aria-pressed",shuffleOn);
+  $("#shuf").textContent=shuffleOn?"⤮ SHUFFLE: ON":"⤮ SHUFFLE IT";
+  const disc=$("#disc");disc.classList.toggle("on",isPlaying);
+  disc.style.background=s?coverCSS(s).replace("background:",""):"";
+  $("#discTxt").textContent=s?initials(s):"♪";
+  $("#eq").classList.toggle("on",isPlaying);
+  const d=isFinite(player.duration)?player.duration:0;
+  $("#seek").max=Math.floor(d);$("#dur").textContent=fmt(d);
+}
+function wiggle(){const d=$("#disc");d.classList.remove("wiggle");void d.offsetWidth;d.classList.add("wiggle");setTimeout(()=>d.classList.remove("wiggle"),650)}
+$("#rows").addEventListener("click",e=>{
+  const el=e.target.closest("[data-i]");if(!el)return;
+  const i=+el.dataset.i;if(!songs[i]||!songs[i].blob)return;
+  if(current===i){player.paused?player.play():player.pause();return}
+  startFrom(i);
+});
+$("#pp").onclick=()=>{if(current==null){buildQueue(null);playAt(0);return}player.paused?player.play():player.pause()};
+$("#shuf").onclick=()=>{
+  shuffleOn=!shuffleOn;
+  if(shuffleOn)wiggle();
+  if(current==null){if(shuffleOn){buildQueue(null);playAt(0)}else updateBar();return}
+  buildQueue(current);updateBar();
+};
+function next(){if(qpos+1<queue.length)playAt(qpos+1);else if(shuffleOn){buildQueue(null);playAt(0)}else{player.pause();updateBar();render()}}
+$("#next").onclick=()=>{if(shuffleOn)wiggle();next()};
+$("#prev").onclick=()=>{if(player.currentTime>3||qpos<=0)player.currentTime=0;else playAt(qpos-1)};
+$("#back").onclick=()=>{player.currentTime=Math.max(0,player.currentTime-15)};
+$("#fwd").onclick=()=>{player.currentTime=Math.min(player.duration||0,player.currentTime+15)};
+let seeking=false;
+$("#seek").addEventListener("input",e=>{seeking=true;$("#cur").textContent=fmt(+e.target.value)});
+$("#seek").addEventListener("change",e=>{player.currentTime=+e.target.value;seeking=false});
+player.addEventListener("timeupdate",()=>{if(!seeking){$("#seek").value=Math.floor(player.currentTime);$("#cur").textContent=fmt(player.currentTime)}});
+player.addEventListener("loadedmetadata",updateBar);
+player.addEventListener("play",()=>{updateBar();render()});
+player.addEventListener("pause",()=>{updateBar();render()});
+player.onended=next;
+document.addEventListener("keydown",e=>{
+  if(e.target.matches("input,textarea")||current==null)return;
+  if(e.code==="Space"){e.preventDefault();$("#pp").click()}
+  else if(e.key==="ArrowRight")$("#fwd").click();
+  else if(e.key==="ArrowLeft")$("#back").click();
+});
+$("#copy").onclick=()=>{
+  const txt=shown().map(s=>[s.title||"(unknown)",s.artist,s.album,s.file].join("\t")).join("\n");
+  const done=()=>{$("#copy").textContent="Copied!";setTimeout(()=>$("#copy").textContent="Copy list",1500)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done).catch(()=>fb(txt,done));else fb(txt,done);
+};
+function fb(txt,done){const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(e){}ta.remove()}
+
+render();updateBar();
+})();
+</script>
